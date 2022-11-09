@@ -5,9 +5,9 @@ import {
     StringKeyMap,
     SpecTableQueryOptions,
     QueryPayload,
+    Filters,
 } from './lib/types'
 import { JSONParser } from './json/index'
-import { Filters } from '@spec.dev/core'
 import { buildQuery } from './lib/utils/queryBuilder'
 import humps from './lib/utils/humps'
 

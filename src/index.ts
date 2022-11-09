@@ -1,6 +1,5 @@
 import SpecTableClient from './client'
-import { Filters } from '@spec.dev/core'
-import { SpecTableQueryOptions } from './lib/types'
+import { SpecTableQueryOptions, Filters } from './lib/types'
 
 export const tableClient = new SpecTableClient()
 

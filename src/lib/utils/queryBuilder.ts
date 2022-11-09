@@ -1,5 +1,4 @@
-import { Filters, FilterOp } from '@spec.dev/core'
-import { QueryPayload, StringKeyMap } from '../types'
+import { QueryPayload, StringKeyMap, Filters, FilterOp } from '../types'
 
 const filterOpValues = new Set(Object.values(FilterOp))
 
