@@ -56,18 +56,18 @@ export default class SpecTableClient {
     /**
      * Build and perform a query for the given table and filters.
      */
-    async queryTableWithFilters(
+    async queryTable(
         table: string,
-        filters: Filters,
+        filters?: Filters,
         options?: SpecTableQueryOptions
     ): Promise<Response> {
-        return this.performQuery(buildQuery(table, filters), options)
+        return this._performQuery(buildQuery(table, filters || []), options)
     }
 
     /**
      * Perform a query and stream the result.
      */
-    async performQuery(
+    async _performQuery(
         queryPayload: QueryPayload,
         options?: SpecTableQueryOptions
     ): Promise<Response> {

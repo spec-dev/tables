@@ -4,11 +4,11 @@ import { SpecTableQueryOptions } from './lib/types'
 
 export const tableClient = new SpecTableClient()
 
-export const queryTableWithFilters = async (
+export const queryTable = async (
     table: string,
-    filters: Filters,
+    filters?: Filters,
     options?: SpecTableQueryOptions
-): Promise<Response> => tableClient.queryTableWithFilters(table, filters, options)
+): Promise<Response> => tableClient.queryTable(table, filters, options)
 
 export * from './lib/tables'
 export * from './lib/types'
