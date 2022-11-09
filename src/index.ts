@@ -8,11 +8,7 @@ export const queryTableWithFilters = async (
     table: string,
     filters: Filters,
     options?: SpecTableQueryOptions
-): Promise<Response> => tableClient.queryTableWithFilters(
-    table, 
-    filters, 
-    options,
-)
+): Promise<Response> => tableClient.queryTableWithFilters(table, filters, options)
 
 export * from './lib/tables'
 export * from './lib/types'
