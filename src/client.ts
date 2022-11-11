@@ -150,7 +150,7 @@ export default class SpecTableClient {
                 streamController?.enqueue(buffer)
                 resetKeepAliveTimer()
             } catch (err) {
-                console.error('Error enqueueing JSON data', data)
+                console.error('Error enqueueing JSON data', data, err)
             }
         }
 
