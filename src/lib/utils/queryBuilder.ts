@@ -1,4 +1,5 @@
 import { QueryPayload, StringKeyMap, Filters, FilterOp } from '../types'
+import humps from './humps'
 
 const filterOpValues = new Set(Object.values(FilterOp))
 
@@ -111,6 +112,6 @@ export function buildAndStatement(
 function formatRelation(relation: string): string {
     return relation
         .split('.')
-        .map((v) => `"${v}"`)
+        .map((v) => `"${humps.decamelize(v)}"`)
         .join('.')
 }

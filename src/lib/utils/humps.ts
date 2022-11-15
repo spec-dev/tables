@@ -59,7 +59,7 @@ var pascalize = function (string) {
     return camelized.substr(0, 1).toUpperCase() + camelized.substr(1)
 }
 
-var decamelize = function (string, options) {
+var decamelize = function (string, options?) {
     return separateWords(string, options).toLowerCase()
 }
 
@@ -116,11 +116,11 @@ export default {
         // @ts-ignore
         return _processKeys(_processor(camelize, options), object)
     },
-    decamelizeKeys: function (object, options) {
+    decamelizeKeys: function (object, options?) {
         // @ts-ignore
         return _processKeys(_processor(decamelize, options), object, options)
     },
-    pascalizeKeys: function (object, options) {
+    pascalizeKeys: function (object, options?) {
         // @ts-ignore
         return _processKeys(_processor(pascalize, options), object)
     },
