@@ -1,28 +1,16 @@
 import config from './lib/config'
 import {
-    RecordTransform,
     SpecTableClientOptions,
     StringKeyMap,
-    SpecTableQueryOptions,
     QueryPayload,
     Filters,
+    SelectOptions,
 } from './lib/types'
-import { JSONParser } from './json/index'
-import { buildQuery } from './lib/utils/queryBuilder'
-import humps from './lib/utils/humps'
+import { buildSelectQuery, buildUpsertQuery } from './lib/utils/queryBuilder'
+import fetch, { Response } from 'cross-fetch'
 
 const DEFAULT_OPTIONS = {
     origin: config.SHARED_TABLES_ORIGIN,
-}
-
-const DEFAULT_QUERY_OPTIONS = {
-    transforms: [],
-    camelResponse: true,
-}
-
-const streamRespHeaders = {
-    'Content-Type': 'application/json',
-    'Transfer-Encoding': 'chunked',
 }
 
 /**
@@ -30,12 +18,18 @@ const streamRespHeaders = {
  *
  * A Javascript client for querying Spec's shared tables.
  */
-export default class SpecTableClient {
+class SpecTableClient {
     protected origin: string
 
     get queryUrl(): string {
         const url = new URL(this.origin)
-        url.pathname = '/stream'
+        url.pathname = '/query'
+        return url.toString()
+    }
+
+    get txUrl(): string {
+        const url = new URL(this.origin)
+        url.pathname = '/tx'
         return url.toString()
     }
 
@@ -54,170 +48,98 @@ export default class SpecTableClient {
     }
 
     /**
-     * Build and perform a query for the given table and filters.
+     * Build and perform a select query for the given table and filters.
      */
-    async queryTable(
+    async select(
         table: string,
         filters?: Filters,
-        options?: SpecTableQueryOptions
-    ): Promise<Response> {
-        return this._performQuery(buildQuery(table, filters || []), options)
+        options?: SelectOptions
+    ): Promise<StringKeyMap[]> {
+        const query = buildSelectQuery(table, filters || [], options || {})
+        return this._performQuery(this.queryUrl, query)
     }
 
     /**
-     * Perform a query and stream the result.
+     * Build and perform an upsert query for the given table.
+     */
+    async upsert(
+        table: string,
+        data: StringKeyMap | StringKeyMap[],
+        conflictColumns: string[],
+        updateColumns: string[],
+        returning?: string | string[]
+    ): Promise<StringKeyMap[]> {
+        // Ensure we're given something to upsert.
+        const isArray = Array.isArray(data)
+        const isObject = !isArray && typeof data === 'object'
+        if (!data || (isArray && !data.length) || (isObject && !Object.keys(data).length)) {
+            throw `No values provided to upsert`
+        }
+
+        // Ensure conflict columns exist.
+        if (!conflictColumns?.length) {
+            throw `No conflict columns given during upsert`
+        }
+
+        // Build and perform upsert.
+        const query = buildUpsertQuery(
+            table,
+            isArray ? data : [data],
+            conflictColumns,
+            updateColumns,
+            returning
+        )
+        return this._performQuery(this.queryUrl, query)
+    }
+
+    async tx(queryPayloads: QueryPayload[]): Promise<StringKeyMap[]> {
+        return this._performQuery(this.txUrl, queryPayloads)
+    }
+
+    /**
+     * Perform a query and return the JSON-parsed result.
      */
     async _performQuery(
-        queryPayload: QueryPayload,
-        options?: SpecTableQueryOptions
-    ): Promise<Response> {
-        const opts = { ...DEFAULT_QUERY_OPTIONS, ...(options || {}) }
-
-        // Make initial request to Tables API.
+        url: string,
+        payload: QueryPayload | QueryPayload[]
+    ): Promise<StringKeyMap[]> {
         const abortController = new AbortController()
-        const initialRequestTimer = setTimeout(() => abortController.abort(), 60000)
-        const resp = await this._makeQueryRequest(queryPayload, abortController)
-        clearTimeout(initialRequestTimer)
-
-        const reader = resp.body?.getReader()!
-        if (!reader) throw 'Unable to get response reader'
-
-        // Create a JSON parser that parses every individual
-        // record on-the-fly and applies the given transforms.
-        const jsonParser = new JSONParser({
-            stringBufferSize: undefined,
-            paths: ['$.*'],
-            keepStack: false,
-        })
-
-        // Add key-camelization as a transform if specified.
-        const transforms = opts?.transforms || []
-        if (opts?.camelResponse) {
-            transforms.push((obj) => humps.camelizeKeys(obj))
-        }
-
-        let streamController, keepAliveTimer
-        let streamClosed = false
-        let hasEnqueuedOpeningBracket = false
-        let hasEnqueuedAnObject = false
-
-        const resetKeepAliveTimer = () => {
-            keepAliveTimer && clearInterval(keepAliveTimer)
-            keepAliveTimer = setInterval(() => {
-                try {
-                    streamClosed || streamController?.enqueue(new TextEncoder().encode(' '))
-                } catch (err) {}
-            }, 1000)
-        }
-
-        // Handle user-provided transforms and modify each record accordingly.
-        jsonParser.onValue = (record) => {
-            if (!record || streamClosed) return
-            record = record as StringKeyMap
-
-            if (!hasEnqueuedOpeningBracket) {
-                streamController?.enqueue(new TextEncoder().encode('['))
-                hasEnqueuedOpeningBracket = true
-            }
-
-            // Enqueue error and close stream if error encountered.
-            if (record.error) {
-                console.error(`Tables API returned error: ${record.error}`)
-                enqueueJSON(record)
-                hasEnqueuedAnObject = true
-                streamController?.enqueue(new TextEncoder().encode(']'))
-                streamController?.close()
-                streamClosed = true
-                return
-            }
-
-            // Apply any record transforms.
-            const transformedRecord = this._transformRecord(record, transforms)
-            if (!transformedRecord) return
-
-            // Convert record back to buffer and enqueue it.
-            enqueueJSON(transformedRecord)
-            hasEnqueuedAnObject = true
-        }
-
-        const enqueueJSON = (data) => {
-            try {
-                let str = JSON.stringify(data)
-                if (hasEnqueuedAnObject) {
-                    str = ',' + str
-                }
-                const buffer = new TextEncoder().encode(str)
-                streamController?.enqueue(buffer)
-                resetKeepAliveTimer()
-            } catch (err) {
-                console.error('Error enqueueing JSON data', data, err)
-            }
-        }
-
-        const stream = new ReadableStream({
-            start(controller) {
-                streamController = controller
-                resetKeepAliveTimer()
-
-                async function pump() {
-                    try {
-                        const { done, value } = await reader.read()
-                        if (done) {
-                            keepAliveTimer && clearInterval(keepAliveTimer)
-                            streamController.enqueue(
-                                new TextEncoder().encode(hasEnqueuedOpeningBracket ? ']' : '[]')
-                            )
-                            streamController.close()
-                            streamClosed = true
-                            return
-                        }
-                        streamClosed || (value && jsonParser.write(value))
-                        return pump()
-                    } catch (err) {
-                        keepAliveTimer && clearInterval(keepAliveTimer)
-                        streamController.close()
-                        streamClosed = true
-                        throw `Stream iteration error ${err}`
-                    }
-                }
-                return pump()
-            },
-        })
-
-        return new Response(stream, { headers: streamRespHeaders })
-    }
-
-    /**
-     * Run a record through a list of user-defined transforms.
-     */
-    _transformRecord(record: StringKeyMap, transforms: RecordTransform[] = []): any {
-        let transformedRecord = record
-        for (const transform of transforms) {
-            transformedRecord = transform(transformedRecord)
-            if (transformedRecord === null) break // support for filter transforms
-        }
-        return transformedRecord
+        const timer = setTimeout(() => abortController.abort(), config.QUERY_RESPONSE_TIMEOUT)
+        const resp = await this._makeRequest(url, payload, abortController)
+        clearTimeout(timer)
+        return this._parseResponse(resp)
     }
 
     /**
      * Initial query POST request.
      */
-    async _makeQueryRequest(
-        payload: StringKeyMap,
+    async _makeRequest(
+        url: string,
+        payload: StringKeyMap | StringKeyMap[],
         abortController: AbortController
     ): Promise<Response> {
-        let resp: Response
         try {
-            resp = await fetch(this.queryUrl, {
+            return await fetch(url, {
                 method: 'POST',
                 headers: this.requestHeaders,
                 body: JSON.stringify(payload),
                 signal: abortController.signal,
             })
         } catch (err) {
-            throw `Initial request error: ${err}`
+            throw `Query request error: ${err}`
         }
-        if (!resp) throw 'Got empty response'
-        return resp
+    }
+
+    /**
+     * Parse JSON HTTP response.
+     */
+    async _parseResponse(resp: Response): Promise<StringKeyMap[]> {
+        try {
+            return (await resp.json()) || []
+        } catch (err) {
+            throw `Failed to parse JSON response data: ${err}`
+        }
     }
 }
+
+export default SpecTableClient

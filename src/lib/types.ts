@@ -6,13 +6,6 @@ export type SpecTableClientOptions = {
     origin?: string
 }
 
-export type SpecTableQueryOptions = {
-    transforms?: RecordTransform[]
-    camelResponse?: boolean
-}
-
-export type RecordTransform = (input: any) => any
-
 export type QueryPayload = {
     sql: string
     bindings: any[]
@@ -35,3 +28,18 @@ export interface Filter {
 }
 
 export type Filters = StringKeyMap | StringKeyMap[]
+
+export enum OrderByDirection {
+    ASC = 'asc',
+    DESC = 'desc',
+}
+
+export type OrderBy = {
+    column: string
+    direction: OrderByDirection
+}
+
+export type SelectOptions = {
+    orderBy?: OrderBy
+    limit?: number
+}

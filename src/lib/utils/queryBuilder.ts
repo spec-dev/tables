@@ -1,14 +1,31 @@
-import { QueryPayload, StringKeyMap, Filters, FilterOp } from '../types'
-import humps from './humps'
+import {
+    QueryPayload,
+    StringKeyMap,
+    Filters,
+    FilterOp,
+    SelectOptions,
+    OrderByDirection,
+} from '../types'
+import { ident, literal } from 'pg-format'
 
 const filterOpValues = new Set(Object.values(FilterOp))
 
+const identPath = (value: string): string =>
+    value
+        .split('.')
+        .map((v) => ident(v))
+        .join('.')
+
 /**
- * Create a sql query with bindings for the given table & filters.
+ * Create a select sql query with bindings for the given table & filters.
  */
-export function buildQuery(table: string, filters: Filters): QueryPayload {
+export function buildSelectQuery(
+    table: string,
+    filters: Filters,
+    options: SelectOptions
+): QueryPayload {
     // Build initial select query.
-    const select = `select * from ${formatRelation(table)}`
+    const select = `select * from ${identPath(table)}`
 
     // Type-check filters and handle case where empty.
     const filtersIsArray = Array.isArray(filters)
@@ -21,10 +38,7 @@ export function buildQuery(table: string, filters: Filters): QueryPayload {
         return { sql: select, bindings: [] }
     }
 
-    // Go ahead and group filters into an array for processing, even if not one.
-    if (!filtersIsArray) {
-        filters = [filters]
-    }
+    filters = filtersIsArray ? filters : [filters]
 
     const orStatements: string[] = []
     const values: any = []
@@ -37,15 +51,78 @@ export function buildQuery(table: string, filters: Filters): QueryPayload {
         return { sql: select, bindings: [] }
     }
 
-    const suffix =
+    const whereClause =
         orStatements.length > 1 ? orStatements.map((s) => `(${s})`).join(' or ') : orStatements[0]
 
-    return {
-        sql: `${select} where ${suffix}`,
-        bindings: values,
+    let sql = `${select} where ${whereClause}`
+
+    const orderBy = options.orderBy
+    if (orderBy?.column && Object.values(OrderByDirection).includes(orderBy?.direction)) {
+        sql += ` order by ${identPath(orderBy?.column)} ${orderBy.direction}`
     }
+
+    if (options.limit) {
+        sql += ` limit ${literal(options.limit)}`
+    }
+    return { sql, bindings: values }
 }
 
+/**
+ * Create an upsert sql query with bindings for the given table & filters.
+ */
+export function buildUpsertQuery(
+    table: string,
+    data: StringKeyMap[],
+    conflictColumns: string[],
+    updateColumns: string[],
+    returning?: string | string[]
+): QueryPayload {
+    const insertColNames = Object.keys(data[0]).sort()
+    if (!insertColNames.length) throw 'No values to upsert'
+
+    let sql = `insert into ${identPath(table)} (${insertColNames.map(ident).join(', ')})`
+
+    const placeholders: string[] = []
+    const bindings: any[] = []
+    let i = 1
+    for (const entry of data) {
+        const entryPlaceholders: string[] = []
+        for (const colName of insertColNames) {
+            entryPlaceholders.push(`$${i}`)
+            bindings.push(entry[colName])
+            i++
+        }
+        placeholders.push(`(${entryPlaceholders.join(', ')})`)
+    }
+
+    sql += ` values ${placeholders.join(', ')} on conflict (${conflictColumns
+        .map(ident)
+        .join(', ')})`
+
+    if (!updateColumns.length) {
+        sql += ' do nothing'
+        return { sql, bindings }
+    }
+
+    const updates: string[] = []
+    for (const updateColName of updateColumns) {
+        updates.push(`${ident(updateColName)} = excluded.${ident(updateColName)}`)
+    }
+
+    sql += ` do update set ${updates.join(', ')}`
+
+    if (returning) {
+        returning = Array.isArray(returning) ? returning : [returning]
+        sql += ` returning ${returning.map(ident).join(', ')}`
+    }
+
+    return { sql, bindings }
+}
+
+/**
+ * Build an inclusive AND group for a WHERE clause.
+ * Ex: x = 3 and y > 4 and ...
+ */
 export function buildAndStatement(
     filtersMap: StringKeyMap,
     values: any[],
@@ -62,8 +139,8 @@ export function buildAndStatement(
 
     const statements: string[] = []
 
-    for (const key in filtersMap) {
-        let value = filtersMap[key]
+    for (const colPath in filtersMap) {
+        let value = filtersMap[colPath]
         const isArray = Array.isArray(value)
         const isObject = !isArray && typeof value === 'object'
         const isFilterObject = isObject && value.op && value.hasOwnProperty('value')
@@ -74,18 +151,18 @@ export function buildAndStatement(
             (isArray && !value.length) ||
             (isArray && !!value.find((v) => Array.isArray(v))) ||
             (isObject && (!Object.keys(value).length || !isFilterObject))
-        )
+        ) {
             continue
+        }
 
-        let op
+        let op = FilterOp.EqualTo
         if (isArray) {
             op = FilterOp.In
         } else if (isFilterObject) {
             op = value.op
             value = value.value
-        } else {
-            op = FilterOp.EqualTo
         }
+
         if (!filterOpValues.has(op)) continue
 
         let valuePlaceholder
@@ -103,15 +180,8 @@ export function buildAndStatement(
             bindingIndex.i++
         }
 
-        statements.push(`${formatRelation(key)} ${op} ${valuePlaceholder}`)
+        statements.push(`${identPath(colPath)} ${op} ${valuePlaceholder}`)
     }
 
     return statements.join(' and ')
-}
-
-function formatRelation(relation: string): string {
-    return relation
-        .split('.')
-        .map((v) => `"${humps.decamelize(v)}"`)
-        .join('.')
 }
