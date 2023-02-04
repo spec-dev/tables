@@ -6,7 +6,7 @@ import {
     SelectOptions,
     OrderByDirection,
 } from '../types'
-import { ident, literal } from 'pg-format'
+import { ident, literal } from './pgFormat'
 
 const filterOpValues = new Set(Object.values(FilterOp))
 
