@@ -112,8 +112,9 @@ export function buildUpsertQuery(
     sql += ` do update set ${updates.join(', ')}`
 
     if (returning) {
+        const isAll = returning === '*'
         returning = Array.isArray(returning) ? returning : [returning]
-        sql += ` returning ${returning.map(ident).join(', ')}`
+        sql += ` returning ${isAll ? '*' : returning.map(ident).join(', ')}`
     }
 
     return { sql, bindings }
