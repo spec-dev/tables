@@ -45,5 +45,5 @@ export type SelectOptions = {
 }
 
 export type AuthOptions = {
-    token: string
+    token: string | null
 }
