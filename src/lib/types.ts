@@ -43,3 +43,7 @@ export type SelectOptions = {
     orderBy?: OrderBy
     limit?: number
 }
+
+export type AuthOptions = {
+    token: string
+}

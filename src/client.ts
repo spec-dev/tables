@@ -5,6 +5,7 @@ import {
     QueryPayload,
     Filters,
     SelectOptions,
+    AuthOptions,
 } from './lib/types'
 import { buildSelectQuery, buildUpsertQuery } from './lib/utils/queryBuilder'
 
@@ -52,10 +53,11 @@ class SpecTableClient {
     async select(
         table: string,
         filters?: Filters,
-        options?: SelectOptions
+        options?: SelectOptions,
+        authOptions?: AuthOptions
     ): Promise<StringKeyMap[]> {
         const query = buildSelectQuery(table, filters || [], options || {})
-        return this._performQuery(this.queryUrl, query)
+        return this._performQuery(this.queryUrl, query, authOptions)
     }
 
     /**
@@ -66,7 +68,8 @@ class SpecTableClient {
         data: StringKeyMap | StringKeyMap[],
         conflictColumns: string[],
         updateColumns: string[],
-        returning?: string | string[]
+        returning?: string | string[],
+        authOptions?: AuthOptions
     ): Promise<StringKeyMap[]> {
         // Ensure we're given something to upsert.
         const isArray = Array.isArray(data)
@@ -88,11 +91,11 @@ class SpecTableClient {
             updateColumns,
             returning
         )
-        return this._performQuery(this.queryUrl, query)
+        return this._performQuery(this.queryUrl, query, authOptions)
     }
 
-    async tx(queryPayloads: QueryPayload[]): Promise<StringKeyMap[]> {
-        return this._performQuery(this.txUrl, queryPayloads)
+    async tx(queryPayloads: QueryPayload[], authOptions?: AuthOptions): Promise<StringKeyMap[]> {
+        return this._performQuery(this.txUrl, queryPayloads, authOptions)
     }
 
     /**
@@ -100,11 +103,12 @@ class SpecTableClient {
      */
     async _performQuery(
         url: string,
-        payload: QueryPayload | QueryPayload[]
+        payload: QueryPayload | QueryPayload[],
+        authOptions?: AuthOptions
     ): Promise<StringKeyMap[]> {
         const abortController = new AbortController()
         const timer = setTimeout(() => abortController.abort(), config.QUERY_RESPONSE_TIMEOUT)
-        const resp = await this._makeRequest(url, payload, abortController)
+        const resp = await this._makeRequest(url, payload, authOptions || null, abortController)
         clearTimeout(timer)
         return this._parseResponse(resp)
     }
@@ -115,18 +119,29 @@ class SpecTableClient {
     async _makeRequest(
         url: string,
         payload: StringKeyMap | StringKeyMap[],
+        authOptions: AuthOptions | null,
         abortController: AbortController
     ): Promise<Response> {
         try {
             return await fetch(url, {
                 method: 'POST',
-                headers: this.requestHeaders,
+                headers: this._buildHeaders(authOptions),
                 body: JSON.stringify(payload),
                 signal: abortController.signal,
             })
         } catch (err) {
             throw `Query request error: ${err}`
         }
+    }
+
+    _buildHeaders(authOptions: AuthOptions | null): StringKeyMap {
+        const baseHeaders = this.requestHeaders
+        return authOptions?.token
+            ? {
+                  ...baseHeaders,
+                  [config.SHARED_TABLES_AUTH_HEADER_NAME]: authOptions.token,
+              }
+            : baseHeaders
     }
 
     /**
