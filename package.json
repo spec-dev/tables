@@ -1,6 +1,6 @@
 {
     "name": "@spec.dev/tables",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "description": "Spec Tables Client",
     "keywords": [
         "javascript",
@@ -32,9 +32,6 @@
         "build:main": "tsc -p tsconfig.json",
         "build:module": "tsc -p tsconfig.module.json",
         "types-generate": "dts-gen -m '@spec.dev/tables' -s"
-    },
-    "dependencies": {
-        "cross-fetch": "^3.1.5"
     },
     "devDependencies": {
         "@types/node": "^18.0.3",

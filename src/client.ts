@@ -7,7 +7,6 @@ import {
     SelectOptions,
 } from './lib/types'
 import { buildSelectQuery, buildUpsertQuery } from './lib/utils/queryBuilder'
-import fetch, { Response } from 'cross-fetch'
 
 const DEFAULT_OPTIONS = {
     origin: config.SHARED_TABLES_ORIGIN,
