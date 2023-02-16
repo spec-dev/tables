@@ -35,7 +35,7 @@ export function buildSelectQuery(
         (filtersIsArray && !filters.length) ||
         (filtersIsObject && !Object.keys(filters).length)
     ) {
-        return { 
+        return {
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
@@ -51,19 +51,18 @@ export function buildSelectQuery(
         andStatement?.length && orStatements.push(andStatement)
     }
     if (!orStatements.length) {
-        return { 
+        return {
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
     }
 
-    const whereClause = orStatements.length > 1 
-        ? orStatements.map((s) => `(${s})`).join(' or ') 
-        : orStatements[0]
+    const whereClause =
+        orStatements.length > 1 ? orStatements.map((s) => `(${s})`).join(' or ') : orStatements[0]
 
     let sql = `${select} where ${whereClause}`
 
-    return { 
+    return {
         sql: addSelectOptionsToQuery(sql, options),
         bindings: values,
     }
