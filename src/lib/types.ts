@@ -41,6 +41,7 @@ export type OrderBy = {
 
 export type SelectOptions = {
     orderBy?: OrderBy
+    offset?: number
     limit?: number
 }
 

@@ -35,7 +35,10 @@ export function buildSelectQuery(
         (filtersIsArray && !filters.length) ||
         (filtersIsObject && !Object.keys(filters).length)
     ) {
-        return { sql: select, bindings: [] }
+        return { 
+            sql: addSelectOptionsToQuery(select, options),
+            bindings: [],
+        }
     }
 
     filters = filtersIsArray ? filters : [filters]
@@ -48,23 +51,22 @@ export function buildSelectQuery(
         andStatement?.length && orStatements.push(andStatement)
     }
     if (!orStatements.length) {
-        return { sql: select, bindings: [] }
+        return { 
+            sql: addSelectOptionsToQuery(select, options),
+            bindings: [],
+        }
     }
 
-    const whereClause =
-        orStatements.length > 1 ? orStatements.map((s) => `(${s})`).join(' or ') : orStatements[0]
+    const whereClause = orStatements.length > 1 
+        ? orStatements.map((s) => `(${s})`).join(' or ') 
+        : orStatements[0]
 
     let sql = `${select} where ${whereClause}`
 
-    const orderBy = options.orderBy
-    if (orderBy?.column && Object.values(OrderByDirection).includes(orderBy?.direction)) {
-        sql += ` order by ${identPath(orderBy?.column)} ${orderBy.direction}`
+    return { 
+        sql: addSelectOptionsToQuery(sql, options),
+        bindings: values,
     }
-
-    if (options.limit) {
-        sql += ` limit ${literal(options.limit)}`
-    }
-    return { sql, bindings: values }
 }
 
 /**
@@ -185,4 +187,26 @@ export function buildAndStatement(
     }
 
     return statements.join(' and ')
+}
+
+function addSelectOptionsToQuery(sql: string, options?: SelectOptions): string {
+    options = options || {}
+    const orderBy = options.orderBy
+
+    // Order by
+    if (orderBy?.column && Object.values(OrderByDirection).includes(orderBy?.direction)) {
+        sql += ` order by ${identPath(orderBy.column)} ${orderBy.direction}`
+    }
+
+    // Offset
+    if (options.hasOwnProperty('offset')) {
+        sql += ` offset ${literal(options.offset)}`
+    }
+
+    // Limit
+    if (options.hasOwnProperty('limit')) {
+        sql += ` limit ${literal(options.limit)}`
+    }
+
+    return sql
 }
