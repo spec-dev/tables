@@ -48,3 +48,11 @@ export type SelectOptions = {
 export type AuthOptions = {
     token: string | null
 }
+
+export type UpsertPayload = {
+    table: string
+    data: StringKeyMap | StringKeyMap[]
+    conflictColumns: string[]
+    updateColumns: string[]
+    returning?: string | string[]
+}

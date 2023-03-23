@@ -2,12 +2,11 @@ import config from './lib/config'
 import {
     SpecTableClientOptions,
     StringKeyMap,
-    QueryPayload,
     Filters,
     SelectOptions,
     AuthOptions,
+    UpsertPayload,
 } from './lib/types'
-import { buildSelectQuery, buildUpsertQuery } from './lib/utils/queryBuilder'
 
 const DEFAULT_OPTIONS = {
     origin: config.SHARED_TABLES_ORIGIN,
@@ -56,21 +55,29 @@ class SpecTableClient {
         options?: SelectOptions,
         authOptions?: AuthOptions
     ): Promise<StringKeyMap[]> {
-        const query = buildSelectQuery(table, filters || [], options || {})
-        return this._performQuery(this.queryUrl, query, authOptions)
+        const payload = { table, filters: filters || [], options: options || {} }
+        return this._performQuery(this.queryUrl, payload, authOptions)
     }
 
     /**
      * Build and perform an upsert query for the given table.
      */
-    async upsert(
-        table: string,
-        data: StringKeyMap | StringKeyMap[],
-        conflictColumns: string[],
-        updateColumns: string[],
-        returning?: string | string[],
-        authOptions?: AuthOptions
-    ): Promise<StringKeyMap[]> {
+    async upsert(payload: UpsertPayload, authOptions?: AuthOptions): Promise<StringKeyMap[]> {
+        payload = this._formalizeUpsertPayload(payload)
+        return this._performQuery(this.queryUrl, payload, authOptions)
+    }
+
+    /**
+     * Build and perform multiple upsert queries in the same DB transaction.
+     */
+    async tx(payloads: UpsertPayload[], authOptions?: AuthOptions): Promise<StringKeyMap[]> {
+        payloads = payloads.map((p) => this._formalizeUpsertPayload(p))
+        return this._performQuery(this.txUrl, payloads, authOptions)
+    }
+
+    _formalizeUpsertPayload(upsertData: UpsertPayload): UpsertPayload {
+        const { table, data, conflictColumns, updateColumns, returning } = upsertData
+
         // Ensure we're given something to upsert.
         const isArray = Array.isArray(data)
         const isObject = !isArray && typeof data === 'object'
@@ -84,18 +91,13 @@ class SpecTableClient {
         }
 
         // Build and perform upsert.
-        const query = buildUpsertQuery(
+        return {
             table,
-            isArray ? data : [data],
+            data: isArray ? data : [data],
             conflictColumns,
             updateColumns,
-            returning
-        )
-        return this._performQuery(this.queryUrl, query, authOptions)
-    }
-
-    async tx(queryPayloads: QueryPayload[], authOptions?: AuthOptions): Promise<StringKeyMap[]> {
-        return this._performQuery(this.txUrl, queryPayloads, authOptions)
+            returning,
+        }
     }
 
     /**
@@ -103,7 +105,7 @@ class SpecTableClient {
      */
     async _performQuery(
         url: string,
-        payload: QueryPayload | QueryPayload[],
+        payload: StringKeyMap | StringKeyMap[],
         authOptions?: AuthOptions
     ): Promise<StringKeyMap[]> {
         const abortController = new AbortController()
