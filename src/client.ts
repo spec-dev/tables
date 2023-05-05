@@ -68,6 +68,14 @@ class SpecTableClient {
     }
 
     /**
+     * Build and perform a delete query for the given table.
+     */
+    async delete(table: string, filters?: Filters, authOptions?: AuthOptions) {
+        const payload = { table, filters: filters || [], delete: true }
+        return this._performQuery(this.queryUrl, payload, authOptions)
+    }
+
+    /**
      * Build and perform multiple upsert queries in the same DB transaction.
      */
     async tx(payloads: UpsertPayload[], authOptions?: AuthOptions): Promise<StringKeyMap[]> {
@@ -106,12 +114,24 @@ class SpecTableClient {
     async _performQuery(
         url: string,
         payload: StringKeyMap | StringKeyMap[],
-        authOptions?: AuthOptions
+        authOptions?: AuthOptions,
+        attempt: number = 1
     ): Promise<StringKeyMap[]> {
         const abortController = new AbortController()
         const timer = setTimeout(() => abortController.abort(), config.QUERY_RESPONSE_TIMEOUT)
-        const resp = await this._makeRequest(url, payload, authOptions || null, abortController)
+
+        let resp
+        try {
+            resp = await this._makeRequest(url, payload, authOptions || null, abortController)
+        } catch (err) {
+            clearTimeout(timer)
+            const message = err.message || err.toString() || ''
+            const didTimeout = message.toLowerCase().includes('user aborted')
+            if ((didTimeout && attempt > 3) || attempt > 10) throw err
+            return await this._performQuery(url, payload, authOptions, attempt + 1)
+        }
         clearTimeout(timer)
+
         return this._parseResponse(resp)
     }
 
