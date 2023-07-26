@@ -54,5 +54,6 @@ export type UpsertPayload = {
     data: StringKeyMap | StringKeyMap[]
     conflictColumns: string[]
     updateColumns: string[]
+    primaryTimestampColumn: string
     returning?: string | string[]
 }

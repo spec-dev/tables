@@ -84,7 +84,8 @@ class SpecTableClient {
     }
 
     _formalizeUpsertPayload(upsertData: UpsertPayload): UpsertPayload {
-        const { table, data, conflictColumns, updateColumns, returning } = upsertData
+        const { table, data, conflictColumns, updateColumns, primaryTimestampColumn, returning } =
+            upsertData
 
         // Ensure we're given something to upsert.
         const isArray = Array.isArray(data)
@@ -98,12 +99,18 @@ class SpecTableClient {
             throw `No conflict columns given during upsert`
         }
 
+        // Ensure primary timestamp column given.
+        if (!conflictColumns?.length) {
+            throw `No primary timestamp column given during upsert`
+        }
+
         // Build and perform upsert.
         return {
             table,
             data: isArray ? data : [data],
             conflictColumns,
             updateColumns,
+            primaryTimestampColumn,
             returning,
         }
     }
@@ -127,7 +134,12 @@ class SpecTableClient {
             clearTimeout(timer)
             const message = err.message || err.toString() || ''
             const didTimeout = message.toLowerCase().includes('user aborted')
-            if ((didTimeout && attempt > 3) || attempt > 10) throw err
+            if (
+                (didTimeout && attempt > config.MAX_TIMEOUT_RETRIES) ||
+                attempt > config.MAX_ERROR_RETRIES
+            ) {
+                throw err
+            }
             return await this._performQuery(url, payload, authOptions, attempt + 1)
         }
         clearTimeout(timer)
@@ -144,8 +156,9 @@ class SpecTableClient {
         authOptions: AuthOptions | null,
         abortController: AbortController
     ): Promise<Response> {
+        let resp
         try {
-            return await fetch(url, {
+            resp = await fetch(url, {
                 method: 'POST',
                 headers: this._buildHeaders(authOptions),
                 body: JSON.stringify(payload),
@@ -154,6 +167,18 @@ class SpecTableClient {
         } catch (err) {
             throw `Query request error: ${err}`
         }
+
+        if (resp.status != 200) {
+            let error = `Query failed with status ${resp.status}`
+            let data = {}
+            try {
+                data = (await resp.json()) || {}
+                error += `: ${JSON.stringify(data)}`
+            } catch (e) {}
+            throw error
+        }
+
+        return resp
     }
 
     _buildHeaders(authOptions: AuthOptions | null): StringKeyMap {
