@@ -100,7 +100,7 @@ class SpecTableClient {
         }
 
         // Ensure primary timestamp column given.
-        if (!conflictColumns?.length) {
+        if (!primaryTimestampColumn) {
             throw `No primary timestamp column given during upsert`
         }
 
